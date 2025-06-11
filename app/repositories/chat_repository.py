@@ -63,7 +63,6 @@ class ChatRepository:
             self.active_session_table.update_item(
                 Key={'user_id': user_id},
                 UpdateExpression="SET ttl_expiry = :val",
-                ExpressionAttributeValues={':val': new_ttl_expiry},
                 ConditionExpression="session_id = :sid_val", # 해당 session_id가 일치할 때만 업데이트
                 ExpressionAttributeValues={':val': new_ttl_expiry, ':sid_val': session_id}
             )

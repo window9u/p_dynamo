@@ -8,8 +8,7 @@ from app.models.chat import ChatMessage # 필요한 경우 모델을 가져와�
 class ChatService:
     def __init__(self, chat_repo: ChatRepository):
         self.chat_repo = chat_repo
-        # TTL 만료 시간 (예: 24시간)
-        self.active_session_ttl_seconds = 24 * 60 * 60 # 24시간
+        self.active_session_ttl_seconds = 60 
 
     async def get_or_create_session(self, user_id: str) -> str:
         """

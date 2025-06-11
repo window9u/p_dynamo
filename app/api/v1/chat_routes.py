@@ -1,5 +1,5 @@
 from fastapi import APIRouter, Depends, HTTPException, status
-from typing import List
+from typing import List, Optional
 
 from app.models.request import SendMessageRequest, ChatMessageResponse, ChatHistoryResponse, SessionInfoResponse
 from app.services.chat_service import ChatService
