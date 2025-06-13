@@ -20,9 +20,26 @@ async def send_message(
 ):
     """사용자 메시지를 보내고 AI 응답을 받습니다."""
     try:
-        ai_message = await chat_service.handle_user_message(request.user_id, request.content)
+        session_id, ai_message = await chat_service.handle_user_message(request.user_id, request.content)
         return ChatMessageResponse(
             content=ai_message,
+            session_id=session_id
+        )
+    except Exception as e:
+        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=str(e))
+
+
+@router.get("/history/{session_id}", response_model=ChatHistoryResponse)
+async def get_chat_history(
+        session_id: str,
+        chat_service: ChatService = Depends(get_chat_service)
+):
+    """세션 ID에 해당하는 채팅 기록을 가져옵니다."""
+    try:
+        messages = chat_service.get_chat_history(session_id)
+
+        return ChatHistoryResponse(
+            messages=messages
         )
     except Exception as e:
         raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=str(e))

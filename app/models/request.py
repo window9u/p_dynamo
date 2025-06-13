@@ -1,16 +1,20 @@
 from pydantic import BaseModel
 from typing import List, Optional
 
+
 class SendMessageRequest(BaseModel):
     user_id: str
     content: str
 
+
 class ChatMessageResponse(BaseModel):
     content: str
+    session_id: str
+
 
 class ChatHistoryResponse(BaseModel):
-    session_id: str
-    messages: List[ChatMessageResponse]
+    messages: List[str]
+
 
 class SessionInfoResponse(BaseModel):
     session_id: str

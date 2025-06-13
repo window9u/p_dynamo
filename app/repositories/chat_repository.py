@@ -18,7 +18,6 @@ def _generate_sort_key(timestamp_ms: int, session_id: str) -> str:
 class ChatRepository:
     def __init__(self):
         self.dynamodb = get_dynamodb_resource()
-        self.chat_messages_table = self.dynamodb.Table(settings.DYNAMODB_CHAT_MESSAGES_TABLE)
         self.session_metadata_table = self.dynamodb.Table(settings.DYNAMODB_SESSION_METADATA_TABLE)
         self.active_session_table = self.dynamodb.Table(settings.DYNAMODB_ACTIVE_SESSION_TABLE)
         self.langchainTable = self.dynamodb.Table(settings.DYNAMODB_LANGCHAIN_TABLE)
@@ -102,3 +101,192 @@ class ChatRepository:
         except ClientError as e:
             print(f"Error creating session metadata: {e}")
             raise
+
+    def get_messages_by_session_id(self, session_id: str) -> List[str]:
+        """세션 ID로 메시지 조회"""
+        try:
+            response = self.langchainTable.get_item(
+                Key={'SessionId': session_id}
+            )
+
+            history = response['Item']['History']
+            return [convert_history_item_to_chat(item) for item in history]
+        except ClientError as e:
+            print(f"Error getting messages for session {session_id}: {e}")
+            raise
+
+
+def convert_history_item_to_chat(item: Dict[str, Any]) -> str:
+    """
+    Convert a history item from DynamoDB format to a chat message string.
+    """
+    if 'data' in item and 'content' in item['data']:
+        return f"{item['type']}: {item['data']['content']}"
+    return ""
+
+
+# Example of History Human type Item Structure
+# "M": {
+#     "data": {
+#         "M": {
+#             "additional_kwargs": {
+#                 "M": {}
+#             },
+#             "content": {
+#                 "S": "hello, do you know my name??"
+#             },
+#             "example": {
+#                 "BOOL": false
+#             },
+#             "id": {
+#                 "NULL": true
+#             },
+#             "name": {
+#                 "NULL": true
+#             },
+#             "response_metadata": {
+#                 "M": {}
+#             },
+#             "type": {
+#                 "S": "human"
+#             }
+#         }
+#     },
+#     "type": {
+#         "S": "human"
+#     }
+# }
+
+# Example of History AI Item Structure
+
+# "M": {
+#     "data": {
+#         "M": {
+#             "additional_kwargs": {
+#                 "M": {
+#                     "refusal": {
+#                         "NULL": true
+#                     }
+#                 }
+#             },
+#             "content": {
+#                 "S": "Hello! I don't know your name unless you tell me. How can I assist you today?"
+#             },
+#             "example": {
+#                 "BOOL": false
+#             },
+#             "id": {
+#                 "S": "run--f5c558d0-7113-476c-9a00-5532e4e103ca-0"
+#             },
+#             "invalid_tool_calls": {
+#                 "L": []
+#             },
+#             "name": {
+#                 "NULL": true
+#             },
+#             "response_metadata": {
+#                 "M": {
+#                     "finish_reason": {
+#                         "S": "stop"
+#                     },
+#                     "id": {
+#                         "S": "chatcmpl-Bhqj3FnOENxs6F8r1tgSLCw6l5iGk"
+#                     },
+#                     "logprobs": {
+#                         "NULL": true
+#                     },
+#                     "model_name": {
+#                         "S": "gpt-4o-mini-2024-07-18"
+#                     },
+#                     "service_tier": {
+#                         "S": "default"
+#                     },
+#                     "system_fingerprint": {
+#                         "S": "fp_34a54ae93c"
+#                     },
+#                     "token_usage": {
+#                         "M": {
+#                             "completion_tokens": {
+#                                 "N": "19"
+#                             },
+#                             "completion_tokens_details": {
+#                                 "M": {
+#                                     "accepted_prediction_tokens": {
+#                                         "N": "0"
+#                                     },
+#                                     "audio_tokens": {
+#                                         "N": "0"
+#                                     },
+#                                     "reasoning_tokens": {
+#                                         "N": "0"
+#                                     },
+#                                     "rejected_prediction_tokens": {
+#                                         "N": "0"
+#                                     }
+#                                 }
+#                             },
+#                             "prompt_tokens": {
+#                                 "N": "25"
+#                             },
+#                             "prompt_tokens_details": {
+#                                 "M": {
+#                                     "audio_tokens": {
+#                                         "N": "0"
+#                                     },
+#                                     "cached_tokens": {
+#                                         "N": "0"
+#                                     }
+#                                 }
+#                             },
+#                             "total_tokens": {
+#                                 "N": "44"
+#                             }
+#                         }
+#                     }
+#                 }
+#             },
+#             "tool_calls": {
+#                 "L": []
+#             },
+#             "type": {
+#                 "S": "ai"
+#             },
+#             "usage_metadata": {
+#                 "M": {
+#                     "input_tokens": {
+#                         "N": "25"
+#                     },
+#                     "input_token_details": {
+#                         "M": {
+#                             "audio": {
+#                                 "N": "0"
+#                             },
+#                             "cache_read": {
+#                                 "N": "0"
+#                             }
+#                         }
+#                     },
+#                     "output_tokens": {
+#                         "N": "19"
+#                     },
+#                     "output_token_details": {
+#                         "M": {
+#                             "audio": {
+#                                 "N": "0"
+#                             },
+#                             "reasoning": {
+#                                 "N": "0"
+#                             }
+#                         }
+#                     },
+#                     "total_tokens": {
+#                         "N": "44"
+#                     }
+#                 }
+#             }
+#         }
+#     },
+#     "type": {
+#         "S": "ai"
+#     }
+# }

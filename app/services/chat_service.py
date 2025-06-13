@@ -75,7 +75,7 @@ class ChatService:
                 else:
                     raise Exception("Failed to get or create active session.")
 
-    async def handle_user_message(self, user_id: str, content: str) -> str:
+    async def handle_user_message(self, user_id: str, content: str) -> (str, str):
         """
         사용자 메시지를 처리하고, AI 응답을 생성하며, 메시지를 저장합니다.
         """
@@ -84,6 +84,11 @@ class ChatService:
 
         config = {"configurable": {"session_id": session_id}}
         res = self.chain_with_history.invoke(input={"question": content}, config=config)
-        print(f"AI response: {res}")
 
-        return res.content
+        return session_id, res.content
+
+    def get_chat_history(self, session_id: str) -> List[str]:
+        """
+        세션 ID에 해당하는 채팅 기록을 가져옵니다.
+        """
+        return self.chat_repo.get_messages_by_session_id(session_id)
