@@ -27,11 +27,11 @@ chain = prompt | ChatOpenAI(api_key=settings.OPENAI_API_KEY, model="gpt-4o-mini"
 class ChatService:
     def __init__(self, chat_repo: ChatRepository):
         self.chat_repo = chat_repo
-        self.active_session_ttl_seconds = 60
+        self.active_session_ttl_seconds = settings.ACTIVE_SESSION_TTL_SECONDS
         self.chain_with_history = RunnableWithMessageHistory(
             chain,
             lambda sid: DynamoDBChatMessageHistory(
-                table_name=settings.DYNAMODB_LANGCHAIN_TABLE, session_id=sid
+                table_name=settings.DYNAMODB_LANGCHAIN_TABLE, session_id=sid, primary_key_name="session_id"
             ),
             input_messages_key="question",
             history_messages_key="history",
@@ -42,38 +42,29 @@ class ChatService:
         사용자의 활성 세션을 가져오거나 새로 생성합니다.
         """
         active_session = self.chat_repo.get_active_session(user_id)
+        current_time_s = int(time.time())
 
-        if active_session:
-            self.chat_repo.update_active_session_ttl(user_id, active_session.session_id,
-                                                     self.active_session_ttl_seconds)
+        if active_session:  # 이미 활성 세션이 있는 경우
+            self.chat_repo.update_active_session_ttl(
+                user_id, active_session.session_id,
+                current_time_s,
+                self.active_session_ttl_seconds
+            )
             print(f"Existing active session found for user {user_id}: {active_session.session_id}")
             return active_session.session_id
-        else:
-            # 새 세션 생성
-            new_session_id = str(uuid.uuid4())
-            current_time_s = int(time.time())
-            created_session = self.chat_repo.create_active_session(
+        else:  # 활성 세션이 없는 경우 새로 생성
+            new_session_id = str(uuid.uuid1())
+            self.chat_repo.create_active_session(
                 user_id,
                 new_session_id,
                 current_time_s,
                 self.active_session_ttl_seconds,
             )
 
-            if created_session:
-                # Session Metadata도 함께 생성
-                self.chat_repo.create_session_metadata(user_id, new_session_id, current_time_s)
-                print(f"New active session created for user {user_id}: {new_session_id}")
-                return new_session_id
-            else:
-                # 동시 요청 등으로 인해 이미 생성되었을 경우, 다시 조회
-                # (이런 케이스는 극히 드물지만, 견고성을 위해)
-                active_session_after_retry = self.chat_repo.get_active_session(user_id)
-                if active_session_after_retry:
-                    print(
-                        f"Race condition: Active session for user {user_id} was created by another request. Using existing: {active_session_after_retry['session_id']}")
-                    return active_session_after_retry['session_id']
-                else:
-                    raise Exception("Failed to get or create active session.")
+            # Session Metadata도 함께 생성
+            self.chat_repo.create_session_metadata(user_id, new_session_id, current_time_s)
+            print(f"New active session created for user {user_id}: {new_session_id}")
+            return new_session_id
 
     async def handle_user_message(self, user_id: str, content: str) -> (str, str):
         """
