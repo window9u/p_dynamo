@@ -1,13 +1,36 @@
 import json
 import boto3
+# import openai
 from typing import List, Dict, Any
 from botocore.exceptions import ClientError
 
 dynamodb = boto3.resource('dynamodb')
 
-# 실제 Lambda function 안에서는 환경변수로 주입 해야함
-session_metadata_table = dynamodb.Table('SessionMetadata')
-langchain_session_table = dynamodb.Table('LangChainSession')
+# LangChainSessionTableName = get_parameter('/p-dynamo/DynamoDB/LangChainSessionTableName')
+# SessionMetadataTableName = get_parameter('/p-dynamo/DynamoDB/SessionMetadataTableName')
+# OpenAIAPIKey = get_parameter('/api-key/openai')
+
+LangChainSessionTableName = "LangChainSession"
+SessionMetadataTableName = "SessionMetadata"
+
+langchain_session_table = dynamodb.Table(LangChainSessionTableName)
+session_metadata_table = dynamodb.Table(SessionMetadataTableName)
+
+summary_system_prompt = """
+You are a helpful assistant that summarizes the conversation.
+You will be given a conversation between a user and an AI assistant.
+Your Summary will be used after new session for long term memory.
+Summarize the conversation in 10 sentences or less.
+"""
+
+
+def get_parameter(name, with_decryption=True):
+    ssm = boto3.client('ssm')
+    response = ssm.get_parameter(
+        Name=name,
+        WithDecryption=with_decryption
+    )
+    return response['Parameter']['Value']
 
 
 def get_messages_by_session_id(session_id: str) -> List[str]:
@@ -34,11 +57,26 @@ def convert_history_item_to_chat(item: Dict[str, Any]) -> str:
 
 
 def summarize_messages(messages: List[str]) -> str:
-    """ai 메시지 요약"""
-    summary = " ".join(messages)
-    if len(summary) > 1000:
-        summary = summary[:1000] + "..."
-    return summary
+    """OpenAI를 사용한 메시지 요약"""
+    # if not messages:
+    #     return "요약할 메시지가 없습니다."
+
+    # openai.api_key = OpenAIAPIKey
+
+    # try:
+    #     response = openai.ChatCompletion.create(
+    #         model="gpt-4o-mini",
+    #         messages=[
+    #             {"role": "system", "content": summary_system_prompt},
+    #             {"role": "user", "content": ''.join(messages)}
+    #         ],
+    #         temperature=0.3
+    #     )
+
+    #     return response.choices[0].message['content'].strip()
+
+    return ''.join(messages)
+
 
 
 def update_session_metadata(user_id: str, session_id: str, summary: str, finished_at: int):
@@ -65,11 +103,11 @@ def is_valid_old_item(item: Dict[str, Any]) -> bool:
 
 
 def lambda_handler(event, context):
-    # print(event)
     for record in event['Records']:
         if record['eventName'] != 'REMOVE':
             continue
 
+        print(record)
         deactivated_session = record['dynamodb'].get('OldImage')
 
         if not deactivated_session or not is_valid_old_item(deactivated_session):

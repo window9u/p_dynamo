@@ -3,7 +3,7 @@ uvicorn[standard]
 boto3
 pydantic
 python-dotenv  # .env 파일 사용 시 (선택 사항)
-uuid6          # UUIDv6 사용 시
+uuid7
 pydantic-settings 
 langchain-community
 langchain_openai

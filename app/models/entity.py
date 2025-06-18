@@ -1,23 +1,48 @@
 from pydantic import BaseModel, Field
-from typing import Optional, List
+from typing import Optional, List, Dict
+from enum import Enum
 
 
+# This is the data model for the session metadata in DynamoDB.
+# it will be saved permanently in DynamoDB.
 class SessionMetadata(BaseModel):
     user_id: str  # partition key
-    session_id: str  # sort key, uuid v1(time based)
+    session_id: str  # sort key, uuid v7(time based)
     created_at: int  # Number
     finished_at: Optional[int] = None  # Number
     session_summary: Optional[str] = None
+    token_usage: Optional[int] = 0  # Number, total tokens used in the session
 
 
+# This is the data model for the chatting in DynamoDB.
+# it will be saved permanently in DynamoDB.
+class Message(BaseModel):
+    user_id: str  # partition key
+    sort_key: str # sort key, session_id#created_at
+    session_id: str  # 특정 세션의 메시지를 빠르게 찾기 위해 (GSI 사용할 수도 있음)
+    created_at: int  # 메시지 발생 시각 (정렬 또는 쿼리/분석용)
+    sender_type: str  # "human" or "ai"
+    content: str  # 메시지 텍스트
+
+
+class SenderType(Enum):
+    HUMAN = "human"
+    AI = "ai"
+
+
+# This is the data model for the active session in DynamoDB.
+# it will be saved temporally in DynamoDB.
 class ActiveSession(BaseModel):
     user_id: str  # partition key
     session_id: str
+    token_usage: int   # Number
     created_at: int  # Number
     updated_at: int  # Number
     expired_at: int
 
 
+# This is the session for the active session in DynamoDB.
+# it will be saved temporally in DynamoDB.
 class LangChainSession(BaseModel):
     session_id: str  # partition key
     History: List

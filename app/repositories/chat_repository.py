@@ -2,16 +2,18 @@ import time
 from typing import List, Dict, Any, Optional
 
 from botocore.exceptions import ClientError
+from boto3.dynamodb.conditions import Key
 
 from app.core.config import settings
 from app.core.db import get_dynamodb_resource
-from app.models.chat import SessionMetadata, ActiveSession
+from app.models.entity import SessionMetadata, ActiveSession, Message
 
 
 class ChatRepository:
     def __init__(self):
         self.dynamodb = get_dynamodb_resource()
         self.session_metadata_table = self.dynamodb.Table(settings.DYNAMODB_SESSION_METADATA_TABLE)
+        self.message_table = self.dynamodb.Table(settings.DYNAMODB_MESSAGE_TABLE)
         self.active_session_table = self.dynamodb.Table(settings.DYNAMODB_ACTIVE_SESSION_TABLE)
         self.langchainTable = self.dynamodb.Table(settings.DYNAMODB_LANGCHAIN_TABLE)
 
@@ -37,7 +39,8 @@ class ChatRepository:
             'session_id': session_id,
             'created_at': created_at,
             'updated_at': created_at,
-            'expired_at': created_at + active_session_ttl_seconds
+            'expired_at': created_at + active_session_ttl_seconds,
+            'token_usage': 0,
         }
         try:
             # 조건부 쓰기: user_id가 없어야만 생성
@@ -71,6 +74,31 @@ class ChatRepository:
             print(f"Error updating active session TTL: {e}")
             raise
 
+    def update_active_session_token_usage(self, user_id: str, token_usage: int):
+        """활성 세션의 토큰 사용량 갱신"""
+        try:
+            self.active_session_table.update_item(
+                Key={'user_id': user_id},
+                UpdateExpression="SET token_usage = token_usage + :t_val",
+                ExpressionAttributeValues={
+                    ':t_val': token_usage
+                }
+            )
+        except ClientError as e:
+            print(f"Error updating active session token usage: {e}")
+            raise
+
+    def remove_active_session(self, user_id: str):
+        """활성 세션 제거"""
+        try:
+            self.active_session_table.delete_item(
+                Key={'user_id': user_id},
+                ConditionExpression='attribute_exists(user_id)'  # user_id가 존재할 때만 삭제
+            )
+        except ClientError as e:
+            print(f"Error removing active session: {e}")
+            raise
+
     def create_session_metadata(self, user_id: str, session_id: str, created_at: int) -> SessionMetadata:
         """세션 메타데이터 생성"""
 
@@ -87,36 +115,44 @@ class ChatRepository:
             print(f"Error creating session metadata: {e}")
             raise
 
-    def get_sessions_by_user_id(self, user_id: str) -> List[SessionMetadata]:
+    def get_current_session_metadata_by_user_id(self, user_id: str, limit: int) -> List[SessionMetadata]:
         """사용자 ID로 세션 메타데이터 조회"""
         try:
             response = self.session_metadata_table.query(
                 KeyConditionExpression='user_id = :uid',
-                ExpressionAttributeValues={':uid': user_id}
+                ExpressionAttributeValues={':uid': user_id},
+                Limit=limit,
+                ScanIndexForward=False  # 최신 세션이 먼저 오도록 정렬
             )
             return [SessionMetadata(**item) for item in response.get('Items', [])]
         except ClientError as e:
             print(f"Error getting sessions for user {user_id}: {e}")
             raise
 
-    def get_messages_by_session_id(self, session_id: str) -> List[str]:
-        """세션 ID로 메시지 조회"""
+    def put_message(self, message: Message) -> None:
+        """메시지 저장"""
         try:
-            response = self.langchainTable.get_item(
-                Key={'session_id': session_id}
-            )
-            history = response['Item']['History']
-            return [convert_history_item_to_chat(item) for item in history]
+            self.message_table.put_item(Item=message.model_dump())
         except ClientError as e:
-            print(f"Error getting messages for session {session_id}: {e}")
+            print(f"Error putting message: {e}")
             raise
 
+    def get_messages_of_user(self, user_id: str, cursor: str, limit: int) -> (List[Message], Optional[str]):
+        """세션 ID로 메시지 조회"""
+        try:
+            query_kwargs = {
+                'KeyConditionExpression': Key('user_id').eq(user_id),
+                'Limit': limit,
+                'ScanIndexForward': False
+            }
+            if cursor:
+                query_kwargs['ExclusiveStartKey'] = {'user_id': user_id, 'sort_key': cursor}
 
-def convert_history_item_to_chat(item: Dict[str, Any]) -> str:
-    """
-    Convert a history item from DynamoDB format to a chat message string.
-    """
-    if 'data' in item and 'content' in item['data']:
-        return f"{item['type']}: {item['data']['content']}"
-    return ""
-
+            response = self.message_table.query(**query_kwargs)
+            items = response.get('Items', [])
+            last_evaluated_key = response.get('LastEvaluatedKey')
+            res = [Message(**item) for item in items]
+            return res, last_evaluated_key['sort_key'] if last_evaluated_key else None
+        except ClientError as e:
+            print(f"Error getting messages for session {user_id}: {e}")
+            raise
